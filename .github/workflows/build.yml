@@ -49,13 +49,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install buildozer cython==0.29.36
+
+      - name: Clean Android build environment
+        run: rm -rf .buildozer
           
       - name: Build Android APK
         run: |
           set -o pipefail
           free -h
-          - name: Clean Android build environment
-          run: rm -rf .buildozer
           buildozer -v android debug 2>&1 | tee build.log
 
       - name: Upload build log
