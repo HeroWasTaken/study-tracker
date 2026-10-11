@@ -19,6 +19,9 @@ android.accept_sdk_license = True
 # Keep the app offline and avoid requesting unnecessary permissions.
 android.permissions =
 
+p4a.branch = develop
+p4a.commit = d2ee8c5
+
 [buildozer]
 
 log_level = 2
