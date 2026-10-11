@@ -54,6 +54,8 @@ jobs:
         run: |
           set -o pipefail
           free -h
+          - name: Clean Android build environment
+          run: rm -rf .buildozer
           buildozer -v android debug 2>&1 | tee build.log
 
       - name: Upload build log
