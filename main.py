@@ -9,6 +9,7 @@ from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.metrics import dp, sp
+from kivy.properties import ListProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
 from kivy.uix.gridlayout import GridLayout
@@ -31,6 +32,33 @@ SUBJECTS = ["Physics", "Maths", "Chemistry"]
 SUBJECT_COLORS = {"Physics": GREEN, "Maths": BLUE, "Chemistry": ORANGE}
 
 
+class RoundedButton(Button):
+    """A Button with a rounded, theme-colored background."""
+    fill_color = ListProperty([0.10, 0.13, 0.19, 1])
+
+    def __init__(self, **kwargs):
+        initial_color = kwargs.pop("background_color", [0.10, 0.13, 0.19, 1])
+        kwargs.setdefault("background_normal", "")
+        kwargs.setdefault("background_down", "")
+        super().__init__(background_color=(0, 0, 0, 0), **kwargs)
+        self.fill_color = initial_color
+        from kivy.graphics import Color, RoundedRectangle
+        with self.canvas.before:
+            self._fill_instruction = Color(*self.fill_color)
+            self._rounded_rect = RoundedRectangle(
+                pos=self.pos, size=self.size, radius=[dp(14)]
+            )
+        self.bind(pos=self._update_rounded_rect, size=self._update_rounded_rect,
+                  fill_color=self._update_fill_color)
+
+    def _update_rounded_rect(self, *_):
+        self._rounded_rect.pos = self.pos
+        self._rounded_rect.size = self.size
+
+    def _update_fill_color(self, *_):
+        self._fill_instruction.rgba = self.fill_color
+
+
 def time_string(seconds):
     seconds = max(0, int(seconds))
     h, rem = divmod(seconds, 3600)
@@ -45,13 +73,14 @@ class StudyTrackerApp(App):
         self.counts = {s: 0 for s in SUBJECTS}
         self.current_subject = "Physics"
         self.accumulated = 0.0
-        self.started_at = time.monotonic()
-        self.running = True
-        self.session_started = datetime.now().isoformat(timespec="seconds")
+        self.started_at = None
+        self.running = False
+        self.session_active = False
+        self.session_started = None
         self.history = []
         self.load_history()
 
-        root = BoxLayout(orientation="vertical", padding=dp(18), spacing=dp(12))
+        root = BoxLayout(orientation="vertical", padding=[dp(18), dp(38), dp(18), dp(18)], spacing=dp(12))
 
         header = BoxLayout(orientation="vertical", size_hint_y=None, height=dp(62), spacing=dp(2))
         header.add_widget(Label(text="STUDY TRACKER", font_size=sp(13), bold=True,
@@ -73,7 +102,7 @@ class StudyTrackerApp(App):
                                      size_hint_y=None, height=dp(22)))
         self.timer_label = Label(text="00:00:00", font_size=sp(36), bold=True, color=WHITE)
         timer_panel.add_widget(self.timer_label)
-        self.timer_status = Label(text="● TIMER RUNNING", font_size=sp(11), color=GREEN,
+        self.timer_status = Label(text="Timer ready", font_size=sp(11), color=MUTED,
                                   size_hint_y=None, height=dp(20))
         timer_panel.add_widget(self.timer_status)
         root.add_widget(timer_panel)
@@ -103,10 +132,9 @@ class StudyTrackerApp(App):
         subject_row = GridLayout(cols=3, spacing=dp(8), size_hint_y=None, height=dp(46))
         self.subject_buttons = {}
         for subject in SUBJECTS:
-            btn = Button(text=subject, font_size=sp(14), bold=True,
-                         background_normal="", background_down="",
-                         background_color=SUBJECT_COLORS[subject] if subject == self.current_subject else PANEL,
-                         color=BG if subject == self.current_subject else WHITE)
+            btn = RoundedButton(text=subject, font_size=sp(14), bold=True,
+                                fill_color=SUBJECT_COLORS[subject] if subject == self.current_subject else PANEL,
+                                color=BG if subject == self.current_subject else WHITE)
             btn.bind(on_release=lambda instance, s=subject: self.select_subject(s))
             self.subject_buttons[subject] = btn
             subject_row.add_widget(btn)
@@ -117,49 +145,63 @@ class StudyTrackerApp(App):
                                     size_hint_y=None, height=dp(24))
         root.add_widget(self.selected_label)
 
-        add_btn = Button(text="+1  QUESTION SOLVED", size_hint_y=None, height=dp(62),
-                         font_size=sp(17), bold=True, background_normal="",
-                         background_down="", background_color=GREEN, color=BG)
+        add_btn = RoundedButton(text="+1  QUESTION SOLVED", size_hint_y=None, height=dp(62),
+                                font_size=sp(17), bold=True, fill_color=GREEN, color=BG)
+        self.add_btn = add_btn
         add_btn.bind(on_release=self.add_question)
         root.add_widget(add_btn)
 
         controls = GridLayout(cols=2, spacing=dp(10), size_hint_y=None, height=dp(48))
-        self.pause_btn = Button(text="Ⅱ  Pause timer", font_size=sp(14),
-                                background_normal="", background_down="",
-                                background_color=PANEL, color=WHITE)
+        self.pause_btn = RoundedButton(text="▶  Start timer", font_size=sp(14),
+                                       fill_color=PANEL, color=WHITE)
         self.pause_btn.bind(on_release=self.toggle_timer)
         controls.add_widget(self.pause_btn)
 
-        finish_btn = Button(text="Finish session", font_size=sp(14), bold=True,
-                            background_normal="", background_down="",
-                            background_color=(0.35, 0.15, 0.19, 1), color=(1, 0.72, 0.74, 1))
+        finish_btn = RoundedButton(text="Finish session", font_size=sp(14), bold=True,
+                                   fill_color=(0.35, 0.15, 0.19, 1), color=(1, 0.72, 0.74, 1))
+        self.finish_btn = finish_btn
         finish_btn.bind(on_release=self.confirm_finish)
         controls.add_widget(finish_btn)
         root.add_widget(controls)
 
-        history_btn = Button(text="View saved session history", size_hint_y=None, height=dp(38),
-                             font_size=sp(12), background_normal="", background_down="",
-                             background_color=BG, color=MUTED)
+        history_btn = RoundedButton(text="View saved session history", size_hint_y=None, height=dp(38),
+                                    font_size=sp(12), fill_color=BG, color=MUTED)
         history_btn.bind(on_release=self.show_history)
         root.add_widget(history_btn)
 
         root.add_widget(Widget())
         self.reported = False
+        self._set_session_controls()
         Clock.schedule_interval(self.update_timer, 1)
         return root
 
     def elapsed(self):
-        if self.running:
+        if self.running and self.started_at is not None:
             return self.accumulated + (time.monotonic() - self.started_at)
         return self.accumulated
 
+    def _set_session_controls(self):
+        if not self.session_active:
+            self.pause_btn.text = "▶  Start timer"
+            self.pause_btn.fill_color = PANEL
+            self.finish_btn.disabled = True
+            self.add_btn.disabled = True
+        else:
+            self.pause_btn.text = "Ⅱ  Pause timer" if self.running else "▶  Resume timer"
+            self.pause_btn.fill_color = PANEL
+            self.finish_btn.disabled = False
+            self.add_btn.disabled = False
+
     def update_timer(self, _dt):
         self.timer_label.text = time_string(self.elapsed())
-        if self.running:
-            self.timer_status.text = "● TIMER RUNNING"
+        if not self.session_active:
+            self.timer_status.text = "Timer ready — press Start"
+            self.timer_status.color = MUTED
+        elif self.running:
+            self.timer_status.text = "STUDYING"
             self.timer_status.color = GREEN
         else:
-            self.timer_status.text = "Ⅱ TIMER PAUSED"
+            self.timer_status.text = "TIMER PAUSED"
             self.timer_status.color = ORANGE
 
     def select_subject(self, subject):
@@ -167,22 +209,34 @@ class StudyTrackerApp(App):
         self.selected_label.text = f"Adding questions to {subject}"
         for name, btn in self.subject_buttons.items():
             selected = name == subject
-            btn.background_color = SUBJECT_COLORS[name] if selected else PANEL
+            btn.fill_color = SUBJECT_COLORS[name] if selected else PANEL
             btn.color = BG if selected else WHITE
 
     def add_question(self, *_):
+        if not self.session_active:
+            return
         self.counts[self.current_subject] += 1
         self.count_labels[self.current_subject].text = str(self.counts[self.current_subject])
 
     def toggle_timer(self, *_):
-        if self.running:
+        if not self.session_active:
+            self.counts = {s: 0 for s in SUBJECTS}
+            for subject in SUBJECTS:
+                self.count_labels[subject].text = "0"
+            self.accumulated = 0.0
+            self.started_at = time.monotonic()
+            self.session_started = datetime.now().isoformat(timespec="seconds")
+            self.session_active = True
+            self.running = True
+            self.reported = False
+        elif self.running:
             self.accumulated += time.monotonic() - self.started_at
+            self.started_at = None
             self.running = False
-            self.pause_btn.text = "▶  Resume timer"
         else:
             self.started_at = time.monotonic()
             self.running = True
-            self.pause_btn.text = "Ⅱ  Pause timer"
+        self._set_session_controls()
         self.update_timer(0)
 
     def load_history(self):
@@ -211,8 +265,8 @@ class StudyTrackerApp(App):
         row = GridLayout(cols=2, spacing=dp(10), size_hint_y=None, height=dp(46))
         popup = Popup(title="Finish session?", content=content, size_hint=(0.88, None),
                       height=dp(190), separator_color=GREEN, background_color=PANEL)
-        cancel = Button(text="Keep studying", background_normal="", background_color=PANEL)
-        finish = Button(text="Finish", background_normal="", background_color=GREEN, color=BG)
+        cancel = RoundedButton(text="Keep studying", fill_color=PANEL)
+        finish = RoundedButton(text="Finish", fill_color=GREEN, color=BG)
         cancel.bind(on_release=popup.dismiss)
         finish.bind(on_release=lambda *_: (popup.dismiss(), self.finish_session()))
         row.add_widget(cancel)
@@ -237,19 +291,34 @@ class StudyTrackerApp(App):
         self.history.append(record)
         self.save_history()
 
+        # Reset the live session immediately; the saved report uses the snapshot above.
+        completed_duration = record["duration_seconds"]
+        completed_counts = dict(record["counts"])
+        self.accumulated = 0.0
+        self.started_at = None
+        self.running = False
+        self.session_active = False
+        self.session_started = None
+        self.counts = {s: 0 for s in SUBJECTS}
+        for subject in SUBJECTS:
+            self.count_labels[subject].text = "0"
+        self.reported = False
+        self._set_session_controls()
+        self.update_timer(0)
+
         content = BoxLayout(orientation="vertical", padding=dp(16), spacing=dp(8))
         content.add_widget(Label(text="SESSION COMPLETE", color=GREEN, bold=True,
                                  font_size=sp(13), size_hint_y=None, height=dp(25)))
-        content.add_widget(Label(text=time_string(self.accumulated), color=WHITE,
+        content.add_widget(Label(text=time_string(completed_duration), color=WHITE,
                                  bold=True, font_size=sp(30), size_hint_y=None, height=dp(45)))
         content.add_widget(Label(text="Total study time", color=MUTED, size_hint_y=None, height=dp(22)))
         for subject in SUBJECTS:
-            content.add_widget(Label(text=f"{subject}: {self.counts[subject]} questions",
+            content.add_widget(Label(text=f"{subject}: {completed_counts[subject]} questions",
                                      color=WHITE, size_hint_y=None, height=dp(24)))
         content.add_widget(Label(text=f"Total: {total} questions", color=GREEN, bold=True,
                                  size_hint_y=None, height=dp(28)))
-        close = Button(text="Done", size_hint_y=None, height=dp(46),
-                       background_normal="", background_color=GREEN, color=BG)
+        close = RoundedButton(text="Done", size_hint_y=None, height=dp(46),
+                              fill_color=GREEN, color=BG)
         content.add_widget(close)
         popup = Popup(title="Study report", content=content, size_hint=(0.88, 0.72),
                       separator_color=GREEN, background_color=PANEL, auto_dismiss=False)
@@ -279,8 +348,8 @@ class StudyTrackerApp(App):
                                        text_size=(Window.width * 0.72, None)))
         scroll.add_widget(items)
         content.add_widget(scroll)
-        close = Button(text="Close", size_hint_y=None, height=dp(44),
-                       background_normal="", background_color=GREEN, color=BG)
+        close = RoundedButton(text="Close", size_hint_y=None, height=dp(44),
+                              fill_color=GREEN, color=BG)
         content.add_widget(close)
         popup = Popup(title="Saved sessions", content=content, size_hint=(0.92, 0.78),
                       separator_color=GREEN, background_color=PANEL)
